@@ -7,14 +7,19 @@
         "ios": "2.2081"
     },
     "version": "1.0.0",
-    "id": "MalikHw.fuck",
-    "name": "fuck",
-    "developer": "MalikHw",
-    "description": "desc.",
-    "tags": ["yes", "yeah"],
+    "id": "malikhw47.deathprevent",
+    "name": "Death Preventer",
+    "developer": "malikhw47",
+    "description": "Prevents you from dying on auto parts on levels by blocking input on it",
+    "tags": ["utility", "online", "gameplay"],
     "links": {
         "source": "https://github.com/MalikHw/fuck",
         "community": "https://discord.gg/G9bZ92eg2n"
     },
-    "settings": {}
+    "dependencies": {
+        "geode.node-ids": {
+            "required": true,
+            "version": "1.23.3"
+        }
+    }
 }
