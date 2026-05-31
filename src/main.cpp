@@ -9,7 +9,7 @@ $on_mod(Loaded) {
 }
 
 static std::unordered_map<int, float> g_blockList;
-static async::TaskHolder<web::WebResponse> g_fetchTask;
+static web::WebTask g_fetchTask;
 
 static constexpr const char* LIST_URL =
     "https://raw.githubusercontent.com/MalikHw/fuck/main/list.json";
@@ -26,43 +26,40 @@ static void parseAndStore(std::string_view jsonStr) {
     }
     g_blockList.clear();
     for (auto& [key, val] : root) {
-        auto idResult = std::stoi(key);  // key = level ID as string
-        float pct = val.isNumber() ? static_cast<float>(val.asDouble().unwrapOr(0.0)) : 0.f;
-        g_blockList[idResult] = pct;
+        try {
+            int id = std::stoi(key);
+            float pct = val.isNumber() ? static_cast<float>(val.asDouble().unwrapOr(0.0)) : 0.f;
+            g_blockList[id] = pct;
+        } catch (...) {
+            log::warn("InputBlocker: skipping bad key '{}'", key);
+        }
     }
     log::info("InputBlocker: loaded {} entries from list.json", g_blockList.size());
 }
 
-// the fetcher ultra
 static void fetchList() {
     auto req = web::WebRequest();
     req.timeout(std::chrono::seconds(10));
-    g_fetchTask.spawn(
-        req.get(LIST_URL),
-        [](web::WebResponse res) {
-            if (!res.ok()) {
-                log::warn("InputBlocker: fetch failed ({}), using cache", res.code());
-                // fall back to cache
-                auto cached = Mod::get()->getSavedValue<std::string>(SAVE_KEY, ""); if (!cached.empty()) parseAndStore(cached); return;
-            }
-            auto body = res.string().unwrapOr("");
-            if (body.empty()) {
-                log::warn("InputBlocker: empty response, using cache");
-                auto cached = Mod::get()->getSavedValue<std::string>(SAVE_KEY, ""); if (!cached.empty()) parseAndStore(cached); return;
-            }
-            Mod::get()->setSavedValue<std::string>(SAVE_KEY, body); parseAndStore(body);
+    g_fetchTask = req.get(LIST_URL).listen([](web::WebResponse* res) {
+        if (!res->ok()) {
+            log::warn("InputBlocker: fetch failed ({}), using cache", res->code());
+            auto cached = Mod::get()->getSavedValue<std::string>(SAVE_KEY, ""); if (!cached.empty()) parseAndStore(cached); return;
         }
-    );
+        auto body = res->string().unwrapOr("");
+        if (body.empty()) {
+            log::warn("InputBlocker: empty response, using cache");
+            auto cached = Mod::get()->getSavedValue<std::string>(SAVE_KEY, ""); if (!cached.empty()) parseAndStore(cached); return;
+        }
+        Mod::get()->setSavedValue<std::string>(SAVE_KEY, body); parseAndStore(body);
+    });
 }
 
 static void loadCacheThenFetch() {
     auto cached = Mod::get()->getSavedValue<std::string>(SAVE_KEY, "");
     if (!cached.empty()) parseAndStore(cached);
-    // fresh fetch ALWAYS
     fetchList();
 }
 
-// PlayLayer bs
 class $modify(InputBlockerPlayLayer, PlayLayer) {
     struct Fields {
         int m_trackedLevelID = -1; float m_blockAtPercent = -1.f; bool m_inputBlocked = false;
@@ -84,20 +81,19 @@ class $modify(InputBlockerPlayLayer, PlayLayer) {
     void updateProgressbar() {
         PlayLayer::updateProgressbar();
         if (m_fields->m_blockAtPercent < 0.f) return;
-        if (m_fields->m_inputBlocked) return; // already blocked, skip every future call too
+        if (m_fields->m_inputBlocked) return;
 
-        if (this->getCurrentPercent() >= m_fields->m_blockAtPercent) {
+        float pct = this->getCurrentPercent();
+        if (pct >= m_fields->m_blockAtPercent) {
             m_fields->m_inputBlocked = true;
             log::info("InputBlocker: reached {:.2f}% on level {} — blocking input",
-                this->getCurrentPercent(), m_fields->m_trackedLevelID);
+                pct, m_fields->m_trackedLevelID);
         }
     }
-    // Intercept pushButton
     bool pushButton(PlayerButton btn) {
-        if (m_fields->m_inputBlocked) return false; // take the input
+        if (m_fields->m_inputBlocked) return false;
         return PlayLayer::pushButton(btn);
     }
-    // intercept releaseButton too
     bool releaseButton(PlayerButton btn) {
         if (m_fields->m_inputBlocked) return false;
         return PlayLayer::releaseButton(btn);
