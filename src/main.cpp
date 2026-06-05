@@ -29,11 +29,10 @@ static void parseAndStore(std::string_view jsonStr) {
     }
     g_blockList.clear();
     for (auto& [key, val] : root) {
-        try {
-            int id = std::stoi(key);
+        if (auto id = geode::utils::num::fromString<int>(key)) {
             float pct = val.isNumber() ? static_cast<float>(val.asDouble().unwrapOr(0.0)) : 0.f;
-            g_blockList[id] = pct;
-        } catch (...) {
+            g_blockList[id.value()] = pct;
+        } else {
             log::warn("InputBlocker: skipping bad key '{}'", key);
         }
     }
